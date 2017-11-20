@@ -25,11 +25,13 @@ def get_all_imgs(all_imgs, mat, path, classes_count, imageset):
 			
 			try:
 				for bb in mat['face_bbx_list'][i][cnt]:
-					all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'x2': int(bb[1]), 'y1': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
+					all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'y1': int(bb[1]), 'x2': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
 			except:
 				bb = mat['face_bbx_list'][i][cnt]
-				all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'x2': int(bb[1]), 'y1': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
+				all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'y1': int(bb[1]), 'x2': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
 			cnt+=1
+			# break;
+		break;
 	return all_imgs
 
 
@@ -56,17 +58,17 @@ def get_data(input_path):
 	mat = spio.loadmat(trainAnnotations, squeeze_me=True)
 	all_imgs = get_all_imgs(all_imgs, mat, trainImagePath, classes_count, 'train')
 	mat = spio.loadmat(valAnnotations, squeeze_me=True)
-	all_imgs = get_all_imgs(all_imgs, mat, valImagePath, classes_count, 'validation')
+	all_imgs = get_all_imgs(all_imgs, mat, valImagePath, classes_count, 'val')
 
 	all_data = []
 	for key in all_imgs:
-		print(key)
-		print(all_imgs[key])
+		# print(key)
+		# print(all_imgs[key])
 		all_data.append(all_imgs[key])
 	
 	return all_data, classes_count, class_mapping
 
 
-all_data, classes_count, class_mapping = get_data('')
+# all_data, classes_count, class_mapping = get_data('')
 
-print (len(all_data))
+# print (len(all_data))
