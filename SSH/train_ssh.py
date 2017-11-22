@@ -100,6 +100,7 @@ random.shuffle(all_imgs)
 
 num_imgs = len(all_imgs)
 
+# train_imgs = [s for s in all_imgs if (s['imageset'] == 'train' and '661.jpg' in s['filepath'])]
 train_imgs = [s for s in all_imgs if s['imageset'] == 'train']
 val_imgs = [s for s in all_imgs if s['imageset'] == 'val']
 
@@ -108,12 +109,12 @@ print('Num val samples {}'.format(len(val_imgs)))
 
 
 data_gen_train = data_generators.get_anchor_gt(train_imgs, classes_count, C, K.image_dim_ordering(), mode='train')
-X, Y, img_data = next(data_gen_train)
-print(X.shape)
-# print(Y.shape)
-print(Y[0].shape)
-print(Y[1].shape)
-print(img_data)
+while(True):
+	X, Y, img_data = next(data_gen_train)
+# print(X.shape)
+# print(Y[0].shape)
+# print(Y[1].shape)
+# print(img_data)
 
 
 # X, Y, img_data = next(data_gen_train)

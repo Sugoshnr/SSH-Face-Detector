@@ -4,7 +4,7 @@ from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_a
 from keras.models import Model
 import numpy as np
 
-input_shape = (224, 224, 3)
+input_shape = (672, 672, 3)
 inputs = Input(shape=input_shape)
 
 # img = load_img('WIDER/WIDER/WIDER_train/images/0--Parade/0_Parade_marchingband_1_6.jpg')
@@ -36,7 +36,7 @@ def VGG16_base():
 	
 	return model
 
-def ContextModel(model, stride, X):
+def ContextModel(model, X):
 	# Removed strides
 	context_conv_1 = Conv2D(int(X/2), (3,3), activation='relu', padding='same')(model)
 	context_conv_2 = Conv2D(int(X/2), (3,3), activation='relu', padding='same')(context_conv_1)
@@ -47,16 +47,16 @@ def ContextModel(model, stride, X):
 
 def DetectionModel(model, name):
 	if name == 'M1':
-		stride = (8, 8)
+		# stride = (8, 8)
 		X = 128
 	if name == 'M2':
-		stride = (16, 16)
+		# stride = (16, 16)
 		X = 256
 	if name == 'M3':
-		stride = (32, 32)
+		# stride = (32, 32)
 		X = 256
 	detection_conv_model = Conv2D(X, (3, 3), activation='relu', padding='same')(model)
-	detection_context_model = ContextModel(model, stride, X)
+	detection_context_model = ContextModel(model, X)
 	detection_model = keras.layers.concatenate([detection_conv_model, detection_context_model])
 	classScores = Conv2D(4, (1,1), padding='same')(detection_model)
 	regressorScores = Conv2D(8, (1,1), padding='same')(detection_model)

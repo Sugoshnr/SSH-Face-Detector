@@ -19,10 +19,11 @@ class Config:
 		self.img_output_length = {'M1':[28, 28], 'M2':[14, 14], 'M3':[7, 7]}
 
 		# anchor box ratios
-		self.anchor_box_ratios = [[1, 1]]
+		# self.anchor_box_ratios = [[1, 1]]
+		self.anchor_box_ratios = [[1, 1], [1./math.sqrt(2), 2./math.sqrt(2)], [2./math.sqrt(2), 1./math.sqrt(2)]]
 
 		# size to resize the smallest side of the image
-		self.im_size = 224
+		self.im_size = 600
 
 		# image channel-wise mean to subtract
 		self.img_channel_mean = [103.939, 116.779, 123.68]
