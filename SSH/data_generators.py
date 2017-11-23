@@ -163,24 +163,24 @@ def findBest(C, module, best, resized_width, resized_height):
 	num_regions = 256
 
 	if len(pos_locs[0]) > num_regions/2:
-		val_locs = random.sample(range(len(pos_locs[0])), len(pos_locs[0]) - num_regions/2)
+		val_locs = random.sample(range(len(pos_locs[0])), int(len(pos_locs[0]) - int(num_regions/2)))
 		y_is_box_valid[0, pos_locs[0][val_locs], pos_locs[1][val_locs], pos_locs[2][val_locs]] = 0
 		num_pos = num_regions/2
 
 	if len(neg_locs[0]) + num_pos > num_regions:
-		val_locs = random.sample(range(len(neg_locs[0])), len(neg_locs[0]) - num_pos)
+		val_locs = random.sample(range(len(neg_locs[0])), int(len(neg_locs[0]) - int(num_pos)))
 		y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
 
 	y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
-	# y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
+	y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
 
-	return y_is_box_valid, y_rpn_regr
+	return y_rpn_cls, y_rpn_regr
 
 
 def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, img, best):
 # def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, img):
 
-	print(module)
+	# print(module)
 	downscale = float(C.rpn_stride[module])
 	# anchor_sizes = C.anchor_box_scales
 	anchor_sizes = C.anchor_box_scales[module]
@@ -189,7 +189,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 	# calculate the output map size based on the network architecture
 	(output_width, output_height) = get_img_output_length(resized_width, resized_height, C.rpn_stride[module])
 	# (output_width, output_height) = C.img_output_length[module]
-	print(anchor_sizes, (output_width, output_height), num_anchors)
+	# print(anchor_sizes, (output_width, output_height), num_anchors)
 	n_anchratios = len(anchor_ratios)
 
 	# initialise empty output objectives
@@ -223,12 +223,14 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 		gta[bbox_num, 1] = bbox['x2'] * (resized_width / float(width))
 		gta[bbox_num, 2] = bbox['y1'] * (resized_height / float(height))
 		gta[bbox_num, 3] = bbox['y2'] * (resized_height / float(height))
+		if((gta[bbox_num, 1] - gta[bbox_num, 0]) <= 0 or (gta[bbox_num, 3] - gta[bbox_num, 2]) <= 0):
+			raise Exception('width or height <=0')
 		if C.diagnose:
 			x1_gt, x2_gt, y1_gt, y2_gt = map(int, gta[bbox_num, :])
 			# print((x1_gt, y1_gt), (x2_gt, y2_gt))
 			cv2.rectangle(img, (x1_gt, y1_gt), (x2_gt, y2_gt), (0, 255, 0), 1)
 
-	resized_width = resized_height = 600
+	resized_width = resized_height = C.im_size
 	# rpn ground truth
 	for anchor_size_idx in range(len(anchor_sizes)):
 		for anchor_ratio_idx in range(n_anchratios):
@@ -333,9 +335,10 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 		import os
 		p = img_data['filepath'].split(os.sep)[:-2]
 		f = img_data['filepath'].split(os.sep)[-1]
-		print((os.path.join(os.sep.join(p), 'diagnose1', f)))
+		# f = (img_data['filepath'].split(os.sep)[-1])[:-5]+'_600'+(img_data['filepath'].split(os.sep)[-1])[-4:]
+		# print((os.path.join(os.sep.join(p), 'diagnose2', f)))
 		height, width = img.shape[:2]
-		cv2.imwrite(os.path.join(os.sep.join(p), 'diagnose1', f), img)
+		cv2.imwrite(os.path.join(os.sep.join(p), 'diagnose2', f), img)
 		
 	best['anchor'] = best_anchor_for_bbox
 	best['iou'] = best_iou_for_bbox
@@ -418,11 +421,11 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 
 				# resize the image so that smalles side is length = 600px
 				x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
-				final_image = np.zeros((600,600,3))
+				final_image = np.zeros((C.im_size, C.im_size, 3))
 				final_image[:resized_height, :resized_width, :] = x_img
 				x_img = final_image
 				# TODO Remove hardcode
-				print('shape',x_img.shape)
+				# print('shape',x_img.shape)
 				try:
 					y_rpn_cls, y_rpn_regr, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M1', np.copy(x_img), best)
 					y_rpn_cls2, y_rpn_regr2, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M2', np.copy(x_img), best)

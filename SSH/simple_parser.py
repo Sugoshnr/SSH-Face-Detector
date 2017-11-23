@@ -11,10 +11,12 @@ def get_all_imgs(all_imgs, mat, path, classes_count, imageset):
 		for face_list in mat['file_list'][i]:
 			filename = path+event+'/'+face_list+'.jpg'
 			class_name ='face'
-			classes_count[class_name] += 1
 			if filename not in all_imgs:
+				# if(len(mat['face_bbx_list'][i][cnt]) == 0):
+				if(np.isnan(mat['face_bbx_list'][i][cnt]).any()):
+					print('skip')
+					continue
 				all_imgs[filename] = {}
-				
 				img = cv2.imread(filename)
 				(rows,cols) = img.shape[:2]
 				all_imgs[filename]['filepath'] = filename
@@ -25,13 +27,15 @@ def get_all_imgs(all_imgs, mat, path, classes_count, imageset):
 			
 			try:
 				for bb in mat['face_bbx_list'][i][cnt]:
+					classes_count[class_name] += 1
 					all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'y1': int(bb[1]), 'x2': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
 			except:
 				bb = mat['face_bbx_list'][i][cnt]
+				classes_count[class_name] += 1
 				all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'y1': int(bb[1]), 'x2': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
 			cnt+=1
 			# break;
-		break;
+		# break;
 	return all_imgs
 
 

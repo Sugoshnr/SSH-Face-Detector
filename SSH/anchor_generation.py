@@ -13,6 +13,8 @@ def IoU(boxA, boxB):
 	interArea = max(0, (xB - xA + 1)) * max(0, (yB - yA + 1))
 	boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
 	boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+	if float(boxAArea + boxBArea - interArea) == 0
+		return 0
 	iou = interArea / float(boxAArea + boxBArea - interArea)
 	return iou
 
@@ -84,27 +86,35 @@ def genAnchors(im, draw, gts):
 
 
 def getAnchors(original_image, gt):
-	width , height = original_image.size
+	height, width = original_image.shape[:2]
 	(resized_width, resized_height) = get_new_img_size(width, height)
+	print(type(original_image))
 	final_image = np.zeros((224,224,3))
-	original_image = original_image.resize((resized_width, resized_height))
-	img = np.asarray(original_image)
+	original_image = cv2.resize(original_image,(resized_width, resized_height), interpolation = cv2.INTER_CUBIC)
+	# img = np.asarray(original_image)
 	# Image.fromarray(img).show()
-	final_image[:img.shape[0], :img.shape[1], :] = img[:, :, :]
-	im = Image.fromarray(final_image.astype('uint8'))
-	draw = ImageDraw.Draw(im)
-	for x in gt:
-		x[0] *= (resized_width / float(width))
-		x[2] *= (resized_width / float(width))
-		x[1] *= (resized_height / float(height))
-		x[3] *= (resized_height / float(height))
+	print(original_image.shape[:2])
+	final_image[:resized_height, :resized_width, :] = original_image
+	print(original_image)
+	cv2.imshow('img1', original_image)
+	print (final_image)
+	cv2.imshow('img', final_image.astype('float32'))
+	cv2.waitKey(0)
+	cv2.destroyAllWindows()
+	# im = Image.fromarray(final_image.astype('uint8'))
+	# draw = ImageDraw.Draw(im)
+	# for x in gt:
+	# 	x[0] *= (resized_width / float(width))
+	# 	x[2] *= (resized_width / float(width))
+	# 	x[1] *= (resized_height / float(height))
+	# 	x[3] *= (resized_height / float(height))
 		# draw.rectangle(x, outline=(0, 0, 255))
-	genAnchors(im, draw, gt)
+	# genAnchors(im, draw, gt)
 	# print (IoU(rect, gt[0]))
 	# im.show()
 
-original_image = Image.open("18_Concerts_Concerts_18_737.jpg")
-f = open('gt2.txt', 'r')
+original_image = cv2.imread("image.jpg")
+f = open('gt.txt', 'r')
 gt = []
 for line in f:
 	x = line.split()

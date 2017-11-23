@@ -5,6 +5,7 @@ from keras.models import Model
 import numpy as np
 
 input_shape = (672, 672, 3)
+# input_shape = (224, 224, 3)
 inputs = Input(shape=input_shape)
 
 # img = load_img('WIDER/WIDER/WIDER_train/images/0--Parade/0_Parade_marchingband_1_6.jpg')
@@ -58,8 +59,8 @@ def DetectionModel(model, name):
 	detection_conv_model = Conv2D(X, (3, 3), activation='relu', padding='same')(model)
 	detection_context_model = ContextModel(model, X)
 	detection_model = keras.layers.concatenate([detection_conv_model, detection_context_model])
-	classScores = Conv2D(4, (1,1), padding='same')(detection_model)
-	regressorScores = Conv2D(8, (1,1), padding='same')(detection_model)
+	classScores = Conv2D(2, (1,1), padding='same', activation='softmax')(detection_model)
+	regressorScores = Conv2D(8, (1,1), padding='same', activation='linear')(detection_model)
 	# shape_new_1 = (int((classScores_conv.shape.__getitem__(1)*classScores_conv.shape.__getitem__(2)*classScores_conv.shape.__getitem__(3))),)
 	# shape_new_2 = (int((regressorScores_conv.shape.__getitem__(1)*regressorScores_conv.shape.__getitem__(2)*regressorScores_conv.shape.__getitem__(3))),)
 	# classScores =keras.layers.Reshape(shape_new_1)(classScores_conv)
@@ -78,31 +79,35 @@ def auxVGG(model):
 	return model
 
 
-baseModel = VGG16_base()
 
-VGGModel = auxVGG(baseModel)
+def getModel():
 
-# M2 Detection Module
-DetectionModulelM2 = DetectionModel(VGGModel, 'M2')
+	baseModel = VGG16_base()
 
+	VGGModel = auxVGG(baseModel)
 
-
-# M3 Detection Module
-VGGModel_pool = MaxPooling2D((2,2), strides=(2,2))(VGGModel)
-DetectionModulelM3 = DetectionModel(VGGModel_pool, 'M3')
+	# M2 Detection Module
+	DetectionModulelM2 = DetectionModel(VGGModel, 'M2')
 
 
 
-# M1 Detection Module
-M1_dimReduction_1 = Conv2D(128, (1, 1), activation='relu', padding='same')(baseModel)
-M1_dimReduction_2 = Conv2D(128, (1, 1), activation='relu', padding='same')(VGGModel)
-M1_dimReduction_2 = keras.layers.UpSampling2D(size=(2, 2))(M1_dimReduction_2)
-M1_elementWiseSum = keras.layers.Add()([M1_dimReduction_1, M1_dimReduction_2])
-M1_conv = Conv2D(128, (3, 3), activation='relu', padding='same')(M1_elementWiseSum)
+	# M3 Detection Module
+	VGGModel_pool = MaxPooling2D((2,2), strides=(2,2))(VGGModel)
+	DetectionModulelM3 = DetectionModel(VGGModel_pool, 'M3')
 
-DetectionModulelM1 = DetectionModel(M1_conv, 'M1')
 
-model = Model(inputs=inputs, outputs=list((np.asarray([DetectionModulelM1, DetectionModulelM2, DetectionModulelM3]).flatten())))
 
-model.compile(optimizer='sgd', loss='categorical_crossentropy')
-model.summary()
+	# M1 Detection Module
+	M1_dimReduction_1 = Conv2D(128, (1, 1), activation='relu', padding='same')(baseModel)
+	M1_dimReduction_2 = Conv2D(128, (1, 1), activation='relu', padding='same')(VGGModel)
+	M1_dimReduction_2 = keras.layers.UpSampling2D(size=(2, 2))(M1_dimReduction_2)
+	M1_elementWiseSum = keras.layers.Add()([M1_dimReduction_1, M1_dimReduction_2])
+	M1_conv = Conv2D(128, (3, 3), activation='relu', padding='same')(M1_elementWiseSum)
+
+	DetectionModulelM1 = DetectionModel(M1_conv, 'M1')
+
+	model = Model(inputs=inputs, outputs=list((np.asarray([DetectionModulelM1, DetectionModulelM2, DetectionModulelM3]).flatten())))
+
+	return model
+# model.compile(optimizer='sgd', loss='categorical_crossentropy')
+# model.summary()
