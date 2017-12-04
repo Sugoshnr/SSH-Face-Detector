@@ -35,7 +35,7 @@ def get_all_imgs(all_imgs, mat, path, classes_count, imageset):
 				all_imgs[filename]['bboxes'].append({'class': class_name, 'x1': int(bb[0]), 'y1': int(bb[1]), 'x2': int(bb[2]+bb[0]), 'y2': int(bb[3]+bb[1])})
 			cnt+=1
 			# break;
-		# break;
+		break;
 	return all_imgs
 
 

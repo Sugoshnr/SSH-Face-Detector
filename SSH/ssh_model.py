@@ -2,6 +2,8 @@ import keras
 from keras.layers import Conv2D, MaxPooling2D, ZeroPadding2D, Input, Flatten, Reshape, Conv2DTranspose, Cropping2D
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.models import Model
+from keras.layers.core import Lambda
+from keras import backend as K
 import numpy as np
 # import cPickle
 import config
@@ -18,7 +20,7 @@ import config
 
 C = config.Config()
 
-input_shape = (C.im_size, C.im_size, 3)
+input_shape = (None, None, 3)
 inputs = Input(shape=input_shape)
 
 # img = load_img('WIDER/WIDER/WIDER_train/images/0--Parade/0_Parade_marchingband_1_6.jpg')
@@ -29,6 +31,17 @@ inputs = Input(shape=input_shape)
 # x = x.reshape((1,) + x.shape)
 # print (x.shape)
 
+def crop_and_add(x):
+    x1 = x[0]
+    x2 = x[1]
+    x1_shape = K.shape(x1)
+    x2_shape = K.shape(x2)
+    # offsets for the top left corner of the crop
+    # offsets = [0, (x1_shape[1] - x2_shape[1]) // 2, (x1_shape[2] - x2_shape[2]) // 2, 0]
+    offsets = [0, 0, 0, 0]
+    size = [-1, x2_shape[1], x2_shape[2], -1]
+    x1_crop = K.tf.slice(x1, offsets, size)
+    return x1_crop + x2
 	
 def VGG16_base():
 	model = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
@@ -116,10 +129,12 @@ def getModel():
 	M1_dimReduction_1 = Conv2D(128, (1, 1), activation='relu', padding='same', name='conv4_128')(baseModel)
 	M1_dimReduction_2 = Conv2D(128, (1, 1), activation='relu', padding='same', name='conv5_128')(VGGModel)
 	M1_dimReduction_2 = keras.layers.UpSampling2D(size=(2, 2), name='conv5_128_upsam')(M1_dimReduction_2)
-	M1_dimReduction_2 = Conv2DTranspose(128, kernel_size=(4, 4), name='conv5_128_up', padding='same', strides=(2,2))(M1_dimReduction_2)
-	## TODO: Experiment on this cropping 2d offsets
-	M1_dimReduction_2 = Cropping2D(cropping=((0, int(C.im_size/8)), (0, int(C.im_size/8))))(M1_dimReduction_2)
-	M1_elementWiseSum = keras.layers.Add(name='conv4_fuse')([M1_dimReduction_1, M1_dimReduction_2])
+	M1_dimReduction_2 = Conv2DTranspose(128, kernel_size=(4, 4), name='conv5_128_up', strides=(2, 2))(M1_dimReduction_2)
+	# ## TODO: Experiment on this cropping 2d offsets
+	# M1_dimReduction_2 = Cropping2D(cropping=((0, int(C.im_size/8)), (0, int(C.im_size/8))))(M1_dimReduction_2)
+	# M1_elementWiseSum = keras.layers.Add(name='conv4_fuse')([M1_dimReduction_1, M1_dimReduction_2])
+	M1_elementWiseSum = Lambda(crop_and_add, name='conv4_fuse')([M1_dimReduction_2, M1_dimReduction_1])
+
 	M1_conv = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv4_fuse_final')(M1_elementWiseSum)
 
 	DetectionModulelM1 = DetectionModel(M1_conv, 'M1', detection_conv_name, context_conv_name)

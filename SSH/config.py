@@ -24,7 +24,7 @@ class Config:
 
 		# size to resize the smallest side of the image
 		# self.im_size = 224
-		self.im_size = 672
+		self.im_size = 1344
 
 		# image channel-wise mean to subtract
 		self.img_channel_mean = [103.939, 116.779, 123.68]
@@ -59,4 +59,4 @@ class Config:
 		# https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5
 
 		self.diagnose = False
-		self.model_path = 'model_frcnn.vgg.hdf5'
+		self.model_path = 'model_ssh.vgg.hdf5'

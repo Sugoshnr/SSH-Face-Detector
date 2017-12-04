@@ -6,8 +6,7 @@ import copy
 # from . import data_augment
 import threading
 import itertools
-from PIL import Image, ImageDraw
-
+import pickle
 
 def get_img_output_length(width, height, stride):
     def get_output_length(input_length):
@@ -73,15 +72,19 @@ def IoU(boxA, boxB):
 # 	return resized_width, resized_height
 
 # mine
-def get_new_img_size(width, height, img_min_side=600):
+def get_new_img_size(width, height, img_min_side=1344):
 	if width >= height:
 		f = float(width) / img_min_side
 		resized_height = int(height / f)
 		resized_width = img_min_side
+		if not int(resized_height) % 2 == 0:
+			resized_height+=1
 	else:
 		f = float(height) / img_min_side
 		resized_width = int(width / f)
 		resized_height = img_min_side
+		if not int(resized_width) % 2 == 0:
+			resized_height+=1
 
 	return resized_width, resized_height
 
@@ -111,7 +114,7 @@ class SampleSelector:
 		else:
 			return True
 
-def findBest(C, module, best, resized_width, resized_height):
+def findBest(C, module, best, resized_width, resized_height, img_data):
 	best_anchor_for_bbox = best['anchor']
 	best_iou_for_bbox = best['iou']
 	best_x_for_bbox = best['x']
@@ -125,7 +128,7 @@ def findBest(C, module, best, resized_width, resized_height):
 	(output_width, output_height) = get_img_output_length(resized_width, resized_height, C.rpn_stride[module])
 	
 	y_rpn_overlap = np.zeros((output_height, output_width, num_anchors))
-	y_is_box_valid = np.zeros((output_height, output_width, num_anchors))
+	y_is_box_valid = np.ones((output_height, output_width, num_anchors))
 	y_rpn_regr = np.zeros((output_height, output_width, num_anchors * 4))
 
 	for idx in range(num_anchors_for_bbox.shape[0]):
@@ -143,6 +146,8 @@ def findBest(C, module, best, resized_width, resized_height):
 			start = 4 * (best_anchor_for_bbox[idx,2] + n_anchratios * best_anchor_for_bbox[idx,3])
 			y_rpn_regr[
 				best_anchor_for_bbox[idx,0], best_anchor_for_bbox[idx,1], start:start+4] = best_dx_for_bbox[idx, :]
+	for anchors in best['neutral_anchors'][module]:
+		y_is_box_valid[anchors[0], anchors[1], anchors[2]] = 0
 
 	y_rpn_overlap = np.transpose(y_rpn_overlap, (2, 0, 1))
 	y_rpn_overlap = np.expand_dims(y_rpn_overlap, axis=0)
@@ -153,13 +158,15 @@ def findBest(C, module, best, resized_width, resized_height):
 	y_rpn_regr = np.transpose(y_rpn_regr, (2, 0, 1))
 	y_rpn_regr = np.expand_dims(y_rpn_regr, axis=0)
 
+	C.representation[img_data['filepath']][module] = [y_is_box_valid, y_rpn_overlap, y_rpn_regr]
+
 	pos_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 1, y_is_box_valid[0, :, :, :] == 1))
 	neg_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 1))
 
 	num_pos = len(pos_locs[0])
-
 	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
 	# regions. We also limit it to 256 regions.
+
 	num_regions = 256
 
 	if len(pos_locs[0]) > num_regions/2:
@@ -170,7 +177,6 @@ def findBest(C, module, best, resized_width, resized_height):
 	if len(neg_locs[0]) + num_pos > num_regions:
 		val_locs = random.sample(range(len(neg_locs[0])), int(len(neg_locs[0]) - int(num_pos)))
 		y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
-
 	y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
 	y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
 
@@ -230,7 +236,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 			# print((x1_gt, y1_gt), (x2_gt, y2_gt))
 			cv2.rectangle(img, (x1_gt, y1_gt), (x2_gt, y2_gt), (0, 255, 0), 1)
 
-	resized_width = resized_height = C.im_size
+	# resized_width = resized_height = C.im_size
 	# rpn ground truth
 	for anchor_size_idx in range(len(anchor_sizes)):
 		for anchor_ratio_idx in range(n_anchratios):
@@ -302,7 +308,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 								# gray zone between neg and pos
 								if bbox_type != 'pos':
 									bbox_type = 'neutral'
-
+					if bbox_type == 'neutral':
+						best['neutral_anchors'][module].append([jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx])
 					# turn on or off outputs depending on IOUs
 					# if bbox_type == 'neg':
 					# 	# print('Negative')
@@ -347,9 +354,9 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 	best['num_anchors'] = num_anchors_for_bbox
 	# we ensure that every bbox has at least one positive RPN region
 	if module == 'M3':
-		y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height)
-		y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height)
-		y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height)
+		y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height, img_data)
+		y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height, img_data)
+		y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height, img_data)
 		
 		return np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \
 				np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3)
@@ -418,12 +425,12 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 				best['num_anchors'] = np.zeros(num_bboxes).astype(int)
 				best['module'] = np.zeros(num_bboxes).astype(int)
 				best['type'] = np.zeros(num_bboxes).astype(int)
-
+				best['neutral_anchors'] = {'M1': [], 'M2': [], 'M3': []}
 				# resize the image so that smalles side is length = 600px
 				x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
-				final_image = np.zeros((C.im_size, C.im_size, 3))
-				final_image[:resized_height, :resized_width, :] = x_img
-				x_img = final_image
+				# final_image = np.zeros((C.im_size, C.im_size, 3))
+				# final_image[:resized_height, :resized_width, :] = x_img
+				# x_img = final_image
 				# TODO Remove hardcode
 				# print('shape',x_img.shape)
 				try:
@@ -459,6 +466,7 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 					y_rpn_regr_M2 = np.transpose(y_rpn_regr_M2, (0, 2, 3, 1))
 					y_rpn_cls_M3 = np.transpose(y_rpn_cls_M3, (0, 2, 3, 1))
 					y_rpn_regr_M3 = np.transpose(y_rpn_regr_M3, (0, 2, 3, 1))
+				
 				yield np.copy(x_img), \
 				[np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), \
 				np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \

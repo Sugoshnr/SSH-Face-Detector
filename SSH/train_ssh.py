@@ -103,7 +103,7 @@ iter_num = 0
 validation_steps = 50
 
 losses = np.zeros((epoch_length, 5))
-losses_val = np.zeros((validation_steps, 5))
+losses_val = np.zeros((epoch_length, 5))
 
 rpn_accuracy_rpn_monitor = []
 rpn_accuracy_for_epoch = []
@@ -162,6 +162,7 @@ for epoch_num in range(num_epochs):
 									  # ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
 			if iter_num == epoch_length:
 			# if True:
+				iter_num = 0
 				loss_rpn_cls = np.mean(losses[:, 0])
 				loss_rpn_regr = np.mean(losses[:, 1])
 
@@ -180,14 +181,20 @@ for epoch_num in range(num_epochs):
 
 				curr_loss = loss_rpn_cls + loss_rpn_regr # + loss_class_cls + loss_class_regr
 
+				if curr_loss < best_loss:
+					if C.verbose:
+						print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
+					best_loss = curr_loss
+					SSH.save_weights(C.model_path)
+
 				print('Validation Started')
 				val_iter = 0
 				while(val_iter < validation_steps):
+					val_iter+=1
 					X_val, Y_val, img_data_val = next(data_gen_val)
 					loss_rpn_val = SSH.test_on_batch(X_val, Y_val)
 					losses_val[val_iter, 0] = loss_rpn_val[1] + loss_rpn_val[3] + loss_rpn_val[5]
 					losses_val[val_iter, 1] = loss_rpn_val[2] + loss_rpn_val[4] + loss_rpn_val[6]
-					val_iter+=1
 				loss_rpn_cls_val = np.mean(losses_val[:, 0])
 				loss_rpn_regr_val = np.mean(losses_val[:, 1])
 				curr_loss_val = loss_rpn_cls_val + loss_rpn_regr_val
@@ -199,17 +206,9 @@ for epoch_num in range(num_epochs):
 				elif(curr_loss_val<best_val_loss):
 					patience=0
 					best_val_loss=curr_loss_val
-
 				print('Validation Stopped')
-				iter_num = 0
+
 				start_time = time.time()
-
-				if curr_loss < best_loss:
-					if C.verbose:
-						print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
-					best_loss = curr_loss
-					SSH.save_weights(C.model_path)
-
 				break
 
 		except Exception as e:
