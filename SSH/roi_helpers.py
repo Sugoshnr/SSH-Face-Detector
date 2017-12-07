@@ -164,6 +164,10 @@ def non_max_suppression_fast_module(boxes, probs, modules, overlap_thresh=0.9, m
 	# if there are no boxes, return an empty list
 	if len(boxes) == 0:
 		return []
+	idx = np.where(probs < 0.95)
+	boxes = np.delete(boxes, idx, 0)
+	probs = np.delete(probs, idx, 0)
+	modules = np.delete(modules, idx, 0)
 
 	# grab the coordinates of the bounding boxes
 	x1 = boxes[:, 0]
@@ -231,7 +235,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 	# code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
 	# if there are no boxes, return an empty list
 	if len(boxes) == 0:
-		return []
+		return np.array([]), np.array([])
 
 	# grab the coordinates of the bounding boxes
 	x1 = boxes[:, 0]
@@ -358,10 +362,7 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, module, use_regr=True, ma
 	idxs = np.where((x1 - x2 >= 0) | (y1 - y2 >= 0))
 	all_boxes = np.delete(all_boxes, idxs, 0)
 	all_probs = np.delete(all_probs, idxs, 0)
-	idx = np.where(all_probs < 0.99)
-	all_boxes = np.delete(all_boxes, idx, 0)
-	all_probs = np.delete(all_probs, idx, 0)
-
+	
 	# print('Probs = ', all_probs, 'Boxes = ', all_boxes)
 	# result = non_max_suppression_fast(all_boxes, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_boxes)[0]
 	all_boxes, all_probs = non_max_suppression_fast(all_boxes, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_boxes)

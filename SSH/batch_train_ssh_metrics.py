@@ -1,8 +1,8 @@
 from __future__ import division
 
-# import os
-# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-# os.environ["CUDA_VISIBLE_DEVICES"]="2"
+import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 
 import random
 import pprint
@@ -89,10 +89,7 @@ def getLosses(clss, regr, img_data, C, module):
 	else:
 		pos_samples = []
 
-	return len(pos_samples), pos_samples
-
-
-
+	return len(pos_samples), pos_samples 
 
 all_imgs, classes_count, class_mapping = get_data('')
 
@@ -158,15 +155,15 @@ SSH = model.getModel()
 optimizer = SGD(lr=0.00005, momentum=0.9, decay=0.0005, nesterov=True)
 SSH.summary()
 # SSH = LoadWeights(SSH)
-# SSH.load_weights('model_ssh.vgg.hdf5')
-SSH = LoadVGGWeights(SSH, VGG_model)
+SSH.load_weights('imagenet_pretrained_2_model_ssh.vgg.hdf5')
+# SSH = LoadVGGWeights(SSH, VGG_model)
 
-SSH.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors), \
+SSH.compile(optimizer=optimizer,
+			loss=[losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors), \
 										losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors), \
 										losses.rpn_loss_cls(num_anchors), losses.rpn_loss_regr(num_anchors)])
 
-
-checkpoint = ModelCheckpoint('imagenet_pretrained_'+C.model_path, monitor = 'val_loss', save_best_only = True, verbose = 1)
+checkpoint = ModelCheckpoint('imagenet_pretrained_2_'+C.model_path, monitor = 'val_loss', save_best_only = True, verbose = 1)
 earlystop = EarlyStopping(monitor = 'val_loss', patience = patience, verbose = 1)
 
 def LogView(batch, logs = {}):
@@ -182,5 +179,6 @@ SSH.fit_generator(generator = data_gen_train,
 				validation_steps = len(val_imgs)//batchSize,
 				epochs = num_epochs,
 				max_queue_size = 20,
-				callbacks = [checkpoint, earlystop, lr_scheduler])
+				callbacks = [checkpoint, earlystop, lr_scheduler],
+				initial_epoch = 18)
 

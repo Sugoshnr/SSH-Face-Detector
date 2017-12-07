@@ -7,6 +7,7 @@ import copy
 import threading
 import itertools
 import traceback
+import pickle
 
 def get_img_output_length(width, height, stride):
     def get_output_length(input_length):
@@ -400,12 +401,38 @@ def threadsafe_generator(f):
 		return threadsafe_iter(f(*a, **kw))
 	return g
 
-def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 
-	# The following line is not useful with Python 3.5, it is kept for the legacy
-	# all_img_data = sorted(all_img_data)
+def findBestAnchors(Y):
+
+	y_is_box_valid, y_rpn_overlap, y_rpn_regr = Y
 	
-	sample_selector = SampleSelector(class_count)
+	pos_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 1, y_is_box_valid[0, :, :, :] == 1))
+	neg_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 1))
+	neutral_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 0))
+
+	# print('pos, neg, neut = ', len(pos_locs[0]), len(neg_locs[0]), len(neutral_locs[0]))
+
+	num_pos = len(pos_locs[0])
+	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
+	# regions. We also limit it to 256 regions.
+
+	num_regions = 256
+
+	if len(pos_locs[0]) > num_regions/2:
+		val_locs = random.sample(range(len(pos_locs[0])), int(len(pos_locs[0]) - int(num_regions/2)))
+		y_is_box_valid[0, pos_locs[0][val_locs], pos_locs[1][val_locs], pos_locs[2][val_locs]] = 0
+		num_pos = num_regions/2
+
+	if len(neg_locs[0]) + num_pos > num_regions:
+		val_locs = random.sample(range(len(neg_locs[0])), int(len(neg_locs[0]) - int(num_pos)))
+		y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
+	y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
+	y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
+
+	return y_rpn_cls, y_rpn_regr
+
+
+def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 
 	while True:
 		if mode == 'train':
@@ -413,54 +440,21 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 
 		for img_data in all_img_data:
 			try:
-
-				if C.balanced_classes and sample_selector.skip_sample_for_balanced_class(img_data):
-					continue
-
 				# read in image, and optionally add augmentation
 
 				img_data_aug = img_data
 				x_img = cv2.imread(img_data_aug['filepath'])
-				(width, height) = (img_data_aug['width'], img_data_aug['height'])
-				(rows, cols, _) = x_img.shape
-
-				assert cols == width
-				assert rows == height
-
-				# get image dimensions for resizing
-				(resized_width, resized_height) = get_new_img_size(width, height, C.im_size)
-				num_bboxes = len(img_data_aug['bboxes'])
-				best = {}
-				best['anchor'] = -1*np.ones((num_bboxes, 4)).astype(int)
-				best['iou'] = np.zeros(num_bboxes).astype(np.float32)
-				best['x'] = np.zeros((num_bboxes, 4)).astype(int)
-				best['dx'] = np.zeros((num_bboxes, 4)).astype(np.float32)
-				best['num_anchors'] = np.zeros(num_bboxes).astype(int)
-				best['module'] = np.zeros(num_bboxes).astype(int)
-				best['type'] = np.zeros(num_bboxes).astype(int)
-				best['neutral_anchors'] = {'M1': [], 'M2': [], 'M3': []}
-				# resize the image so that smalles side is length = 600px
-				x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
-				# final_image = np.zeros((C.im_size, C.im_size, 3))
-				# final_image[:resized_height, :resized_width, :] = x_img
-				# x_img = final_image
-				# TODO Remove hardcode
-				# print('shape',x_img.shape)
 				try:
-					y_rpn_cls, y_rpn_regr, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M1', np.copy(x_img), best)
-					y_rpn_cls2, y_rpn_regr2, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M2', np.copy(x_img), best)
-					y_rpn_cls_M1, y_rpn_regr_M1, y_rpn_cls_M2, y_rpn_regr_M2, y_rpn_cls_M3, y_rpn_regr_M3 = calc_rpn( \
-						C, img_data_aug, width, height, resized_width, resized_height, 'M3', np.copy(x_img), best \
-					)
-					# y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height, img_data)
-					# y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height, img_data)
-					# y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height, img_data)
-		
+					pickleFile = img_data['filepath']+'.pickle'
+					anchors = pickle.load(open(pickleFile, "rb"), encoding = 'latin1')
+					y_rpn_cls_M1, y_rpn_regr_M1 = findBestAnchors(anchors['M1'])
+					y_rpn_cls_M2, y_rpn_regr_M2 = findBestAnchors(anchors['M2'])
+					y_rpn_cls_M3, y_rpn_regr_M3 = findBestAnchors(anchors['M3'])
 				except Exception as e:
 					print('Failure',e)
 					print(traceback.format_exc())
 					continue
-				
+
 				# Zero-center by mean pixel, and preprocess image
 				x_img = x_img[:,:, (2, 1, 0)]  # BGR -> RGB
 				x_img = x_img.astype(np.float32)

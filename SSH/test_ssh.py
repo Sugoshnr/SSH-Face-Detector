@@ -117,7 +117,7 @@ def drawRect(R, prob, module, color, img):
 
 def ROI(Y1, Y2, C, K, module):
 	# R, prob = roi_helpers.rpn_to_roi(Y1, Y2, C, K, module, overlap_thresh=0.5)
-	box, prob = roi_helpers.rpn_to_roi(Y1, Y2, C, K, module, overlap_thresh=0.1, max_boxes=20)
+	box, prob = roi_helpers.rpn_to_roi(Y1, Y2, C, K, module, overlap_thresh=0.3, max_boxes=1000)
 	modules = np.zeros(prob.shape)
 	modules[:] = int(module[-1])
 	# convert from (x1,y1,x2,y2) to (x,y,w,h)
@@ -220,7 +220,7 @@ num_anchors = len(C.anchor_box_scales['M1']) * len(C.anchor_box_ratios)
 SSH = model.getModel()
 optimizer = Adam(lr=1e-5)
 SSH.summary()
-SSH.load_weights('weights/pretrained_generator_model_ssh_2.hdf5', by_name=True)
+SSH.load_weights('weights/imagenet_pretrained_model_ssh.vgg_2.hdf5', by_name=True)
 # SSH = LoadWeights(SSH)
 # print(SSH.get_weights())
 
@@ -270,7 +270,7 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	# print(all_boxes.shape)
 	# print(all_probs.shape)
 	# print(all_modules.shape)
-	R, probs, modules = roi_helpers.non_max_suppression_fast_module(all_boxes, all_probs, all_modules, overlap_thresh=0.1, max_boxes=20)
+	R, probs, modules = roi_helpers.non_max_suppression_fast_module(all_boxes, all_probs, all_modules, overlap_thresh=0.3, max_boxes=100)
 	# print(R.shape)
 	# # R[:, 2] -= R[:, 0]
 	# # R[:, 3] -= R[:, 1]
@@ -387,5 +387,5 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 # 	print(all_dets)
 	# cv2.imshow('img', img)
 	# cv2.waitKey(0)
-	cv2.imwrite('test/out/pretrained_1/{}_1.png'.format(idx),img)
+	cv2.imwrite('test/out/{}_1.png'.format(idx),img)
 	# break;

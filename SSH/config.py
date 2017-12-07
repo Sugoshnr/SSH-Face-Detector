@@ -60,3 +60,6 @@ class Config:
 
 		self.diagnose = False
 		self.model_path = 'model_ssh.vgg.hdf5'
+
+		self.representation = {}
+		self.eval = {}
