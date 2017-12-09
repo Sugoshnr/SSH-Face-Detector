@@ -3,15 +3,14 @@ import numpy as np
 import cv2
 import random
 import copy
-# from . import data_augment
+import data_augment
 import threading
 import itertools
 import traceback
-import pickle
 
-def get_img_output_length(width, height, stride):
+def get_img_output_length(width, height, rpn_stride):
     def get_output_length(input_length):
-        return input_length//stride
+        return input_length//rpn_stride
 
     return get_output_length(width), get_output_length(height)
 
@@ -115,7 +114,7 @@ class SampleSelector:
 		else:
 			return True
 
-def findBest(C, module, best, resized_width, resized_height, img_data):
+def findBest(C, module, best, resized_width, resized_height, img_data, img, stride):
 	best_anchor_for_bbox = best['anchor']
 	best_iou_for_bbox = best['iou']
 	best_x_for_bbox = best['x']
@@ -131,13 +130,16 @@ def findBest(C, module, best, resized_width, resized_height, img_data):
 	y_rpn_overlap = np.zeros((output_height, output_width, num_anchors))
 	y_is_box_valid = np.ones((output_height, output_width, num_anchors))
 	y_rpn_regr = np.zeros((output_height, output_width, num_anchors * 4))
-
+	# img = cv2.imread(img_data['filepath'])
 	for idx in range(num_anchors_for_bbox.shape[0]):
 		# if num_anchors_for_bbox[idx] == 0:
 		if best['module'][idx] == int(module[1]):
 			# no box with an IOU greater than zero ...
 			if best_anchor_for_bbox[idx, 0] == -1:
 				continue
+			# print((best_x_for_bbox[idx,0], best_x_for_bbox[idx,2]), (best_x_for_bbox[idx,1], best_x_for_bbox[idx,3]))
+			# print('iou = ', best_iou_for_bbox[idx])
+			cv2.rectangle(img, (best_x_for_bbox[idx,0], best_x_for_bbox[idx,2]), (best_x_for_bbox[idx,1], best_x_for_bbox[idx,3]), (0, 0, 255), 1)
 			y_is_box_valid[
 				best_anchor_for_bbox[idx,0], best_anchor_for_bbox[idx,1], best_anchor_for_bbox[idx,2] + n_anchratios *
 				best_anchor_for_bbox[idx,3]] = 1
@@ -147,9 +149,9 @@ def findBest(C, module, best, resized_width, resized_height, img_data):
 			start = 4 * (best_anchor_for_bbox[idx,2] + n_anchratios * best_anchor_for_bbox[idx,3])
 			y_rpn_regr[
 				best_anchor_for_bbox[idx,0], best_anchor_for_bbox[idx,1], start:start+4] = best_dx_for_bbox[idx, :]
+	# print (cnt)
 	for anchors in best['neutral_anchors'][module]:
 		y_is_box_valid[anchors[0], anchors[1], anchors[2]] = 0
-
 	y_rpn_overlap = np.transpose(y_rpn_overlap, (2, 0, 1))
 	y_rpn_overlap = np.expand_dims(y_rpn_overlap, axis=0)
 
@@ -160,7 +162,7 @@ def findBest(C, module, best, resized_width, resized_height, img_data):
 	y_rpn_regr = np.expand_dims(y_rpn_regr, axis=0)
 	# f = img_data['filepath'].split(os.sep)[-1]
 	# print(f)
-	# C.representation[module] = [y_is_box_valid, y_rpn_overlap, y_rpn_regr]
+	img_data[stride][module] = [np.copy(y_is_box_valid), np.copy(y_rpn_overlap), np.copy(y_rpn_regr)]
 	# y_is_box_valid, y_rpn_overlap, y_rpn_regr = C.representation[f][module]
 	# C.representation[f][module] = [y_is_box_valid, y_rpn_overlap, y_rpn_regr]
 
@@ -168,7 +170,7 @@ def findBest(C, module, best, resized_width, resized_height, img_data):
 	neg_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 1))
 	neutral_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 0))
 
-	# print('pos, neg, neut = ', len(pos_locs[0]), len(neg_locs[0]), len(neutral_locs[0]))
+	# print('{} {} pos, neg, neut = {} {} {}'.format(module, stride, len(pos_locs[0]), len(neg_locs[0]), len(neutral_locs[0])))
 
 	num_pos = len(pos_locs[0])
 	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
@@ -196,7 +198,7 @@ def findBest(C, module, best, resized_width, resized_height, img_data):
 	return y_rpn_cls, y_rpn_regr
 
 
-def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, img, best):
+def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, img, best, stride):
 # def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, img):
 
 	# print(module)
@@ -236,6 +238,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 	
 	# get the GT box coordinates, and resize to account for image resizing
 	gta = np.zeros((num_bboxes, 4))
+	
+	stride_val = 1
 	for bbox_num, bbox in enumerate(img_data['bboxes']):
 		# get the GT box coordinates, and resize to account for image resizing
 		gta[bbox_num, 0] = bbox['x1'] * (resized_width / float(width))
@@ -244,10 +248,24 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 		gta[bbox_num, 3] = bbox['y2'] * (resized_height / float(height))
 		if((gta[bbox_num, 1] - gta[bbox_num, 0]) <= 0 or (gta[bbox_num, 3] - gta[bbox_num, 2]) <= 0):
 			raise Exception('width or height <=0')
-		if C.diagnose:
+	if stride == 'right':
+		gta[:, 0]+=C.right_horizontal_stride
+		gta[:, 1]+=C.right_horizontal_stride
+	elif stride == 'left':
+		gta[:, 0]+=C.left_horizontal_stride
+		gta[:, 1]+=C.left_horizontal_stride
+	elif stride == 'top':
+		gta[:, 2]+=C.top_vertical_stride
+		gta[:, 3]+=C.top_vertical_stride
+	elif stride == 'bottom':
+		gta[:, 2]+=C.bottom_vertical_stride
+		gta[:, 3]+=C.bottom_vertical_stride
+	for bbox_num, bbox in enumerate(img_data['bboxes']):
+		if True:
 			x1_gt, x2_gt, y1_gt, y2_gt = map(int, gta[bbox_num, :])
 			# print((x1_gt, y1_gt), (x2_gt, y2_gt))
 			cv2.rectangle(img, (x1_gt, y1_gt), (x2_gt, y2_gt), (0, 255, 0), 1)
+	
 
 	# resized_width = resized_height = C.im_size
 	# rpn ground truth
@@ -340,8 +358,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 					# 	y_rpn_regr[jy, ix, start:start+4] = best_regr
 
 
-					if bbox_type == 'pos':
-						cv2.rectangle(img, (int(x1_anc), int(y1_anc)), (int(x2_anc), int(y2_anc)), (255, 0, 0), thickness=1)
+					# if bbox_type == 'pos':
+						# cv2.rectangle(img, (int(x1_anc), int(y1_anc)), (int(x2_anc), int(y2_anc)), (255, 0, 0), thickness=1)
 	if C.diagnose and module == 'M3':
 		for bbox_num in range(num_bboxes):
 			color = {'pos': (255, 255, 255), 'neutral': (255, 255, 255), 'neg': (0, 0, 255)}
@@ -368,12 +386,16 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, module, 
 	# we ensure that every bbox has at least one positive RPN region
 	if module == 'M3':
 		# C.representation[img_data['filepath']] = {}
-		y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height, img_data)
-		y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height, img_data)
-		y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height, img_data)
-		
+		img_data[stride] = {}
+		y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height, img_data, img, stride)
+		y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height, img_data, img, stride)
+		y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height, img_data, img, stride)
+		# print(len(np.where(best['module']>0)[0]))
+		# print(stride, num_bboxes)
+		# cv2.imwrite(stride+'1.jpg',img)
+	
 		return np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \
-				np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3)
+				np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3), len(np.where(best['module']>0)[0])
 
 	return np.copy(y_rpn_cls), np.copy(y_rpn_regr), img, best
 
@@ -401,38 +423,12 @@ def threadsafe_generator(f):
 		return threadsafe_iter(f(*a, **kw))
 	return g
 
-
-def findBestAnchors(Y):
-
-	y_is_box_valid, y_rpn_overlap, y_rpn_regr = Y
-	
-	pos_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 1, y_is_box_valid[0, :, :, :] == 1))
-	neg_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 1))
-	neutral_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 0))
-
-	# print('pos, neg, neut = ', len(pos_locs[0]), len(neg_locs[0]), len(neutral_locs[0]))
-
-	num_pos = len(pos_locs[0])
-	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
-	# regions. We also limit it to 256 regions.
-
-	num_regions = 256
-
-	if len(pos_locs[0]) > num_regions/2:
-		val_locs = random.sample(range(len(pos_locs[0])), int(len(pos_locs[0]) - int(num_regions/2)))
-		y_is_box_valid[0, pos_locs[0][val_locs], pos_locs[1][val_locs], pos_locs[2][val_locs]] = 0
-		num_pos = num_regions/2
-
-	if len(neg_locs[0]) + num_pos > num_regions:
-		val_locs = random.sample(range(len(neg_locs[0])), int(len(neg_locs[0]) - int(num_pos)))
-		y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
-	y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
-	y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
-
-	return y_rpn_cls, y_rpn_regr
-
-
 def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
+
+	# The following line is not useful with Python 3.5, it is kept for the legacy
+	# all_img_data = sorted(all_img_data)
+	
+	sample_selector = SampleSelector(class_count)
 
 	while True:
 		if mode == 'train':
@@ -440,66 +436,109 @@ def get_anchor_gt(all_img_data, class_count, C, backend, mode='train'):
 
 		for img_data in all_img_data:
 			try:
-				# read in image, and optionally add augmentation
 
-				img_data_aug = img_data
-				x_img = cv2.imread(img_data_aug['filepath'])
-				try:
-					pickleFile = img_data['filepath']+'.pickle'
-					data = pickle.load(open(pickleFile, "rb"))
-					bestStride = data['stride']
-					rows, cols = img.shape[:2]
-					if bestStride == 'left':
-						M = np.float32([[1,0,C.left_horizontal_stride],[0,1,0]])
-						x_img = cv2.warpAffine(x_img,M,(cols,rows))
-					elif bestStride == 'right':
-						M = np.float32([[1,0,C.right_horizontal_stride],[0,1,0]])
-						x_img = cv2.warpAffine(x_img,M,(cols,rows))
-					elif bestStride == 'top':
-						M = np.float32([[1,0,0],[0,1,C.top_vertical_stride]])
-						x_img = cv2.warpAffine(x_img,M,(cols,rows))
-					elif bestStride == 'bottom':
-						M = np.float32([[1,0,0],[0,1,C.bottom_vertical_stride]])
-						x_img = cv2.warpAffine(x_img,M,(cols,rows))
-
-					anchors = data[bestStride]
-					y_rpn_cls_M1, y_rpn_regr_M1 = findBestAnchors(anchors['M1'])
-					y_rpn_cls_M2, y_rpn_regr_M2 = findBestAnchors(anchors['M2'])
-					y_rpn_cls_M3, y_rpn_regr_M3 = findBestAnchors(anchors['M3'])
-				except Exception as e:
-					print('Failure',e)
-					print(traceback.format_exc())
+				if C.balanced_classes and sample_selector.skip_sample_for_balanced_class(img_data):
 					continue
+				augmented_data = {}
+				max_count = -1
+				best_stride = 'original'
+				# read in image, and optionally add augmentation
+				images = data_augment.augment(img_data, C)
+				for image_idx in range(len(images)):
+					# Augment bboxes
+					img_data_aug = copy.deepcopy(img_data)
+					x_img = copy.deepcopy(images[image_idx])
+					stride = 'original'
+					if(image_idx == 1):
+						stride = 'right'
+					elif(image_idx == 2):
+						stride = 'left'
+					elif(image_idx == 3):
+						stride = 'top'
+					elif(image_idx == 4):
+						stride = 'bottom'
+					img_data_aug['stride'] = stride
+					# x_img = cv2.imread(img_data_aug['filepath'])
+					(width, height) = (img_data_aug['width'], img_data_aug['height'])
+					(rows, cols, _) = x_img.shape
 
-				# Zero-center by mean pixel, and preprocess image
-				x_img = x_img[:,:, (2, 1, 0)]  # BGR -> RGB
-				x_img = x_img.astype(np.float32)
-				x_img[:, :, 0] -= C.img_channel_mean[0]
-				x_img[:, :, 1] -= C.img_channel_mean[1]
-				x_img[:, :, 2] -= C.img_channel_mean[2]
-				x_img /= C.img_scaling_factor
+					assert cols == width
+					assert rows == height
 
-				x_img = np.transpose(x_img, (2, 0, 1))
-				x_img = np.expand_dims(x_img, axis=0)
+					# get image dimensions for resizing
+					(resized_width, resized_height) = get_new_img_size(width, height, C.im_size)
+					num_bboxes = len(img_data_aug['bboxes'])
+					best = {}
+					best['anchor'] = -1*np.ones((num_bboxes, 4)).astype(int)
+					best['iou'] = C.rpn_max_overlap * np.ones(num_bboxes).astype(np.float32)
+					best['x'] = np.zeros((num_bboxes, 4)).astype(int)
+					best['dx'] = np.zeros((num_bboxes, 4)).astype(np.float32)
+					best['num_anchors'] = np.zeros(num_bboxes).astype(int)
+					best['module'] = np.zeros(num_bboxes).astype(int)
+					best['type'] = np.zeros(num_bboxes).astype(int)
+					best['neutral_anchors'] = {'M1': [], 'M2': [], 'M3': []}
+					# resize the image so that smalles side is length = 600px
+					x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
+					# final_image = np.zeros((C.im_size, C.im_size, 3))
+					# final_image[:resized_height, :resized_width, :] = x_img
+					# x_img = final_image
+					# TODO Remove hardcode
+					# print('shape',x_img.shape)
+					try:
+						y_rpn_cls, y_rpn_regr, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M1', np.copy(x_img), best, stride)
+						y_rpn_cls2, y_rpn_regr2, x_img, best = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, 'M2', np.copy(x_img), best, stride)
+						y_rpn_cls_M1, y_rpn_regr_M1, y_rpn_cls_M2, y_rpn_regr_M2, y_rpn_cls_M3, y_rpn_regr_M3, anchor_count = calc_rpn( \
+							C, img_data_aug, width, height, resized_width, resized_height, 'M3', np.copy(x_img), best, stride \
+						)
+						# y_rpn_cls_M1, y_rpn_regr_M1 = findBest(C, 'M1', best, resized_width, resized_height, img_data)
+						# y_rpn_cls_M2, y_rpn_regr_M2 = findBest(C, 'M2', best, resized_width, resized_height, img_data)
+						# y_rpn_cls_M3, y_rpn_regr_M3 = findBest(C, 'M3', best, resized_width, resized_height, img_data)
+			
+					except Exception as e:
+						print('Failure',e)
+						print(traceback.format_exc())
+						continue
+					
+					# Zero-center by mean pixel, and preprocess image
+			
+					x_img = x_img[:,:, (2, 1, 0)]  # BGR -> RGB
+					x_img = x_img.astype(np.float32)
+					x_img[:, :, 0] -= C.img_channel_mean[0]
+					x_img[:, :, 1] -= C.img_channel_mean[1]
+					x_img[:, :, 2] -= C.img_channel_mean[2]
+					x_img /= C.img_scaling_factor
 
-				y_rpn_regr_M1[:, y_rpn_regr_M1.shape[1]//2:, :, :] *= C.std_scaling
-				y_rpn_regr_M2[:, y_rpn_regr_M2.shape[1]//2:, :, :] *= C.std_scaling
-				y_rpn_regr_M3[:, y_rpn_regr_M3.shape[1]//2:, :, :] *= C.std_scaling
+					x_img = np.transpose(x_img, (2, 0, 1))
+					x_img = np.expand_dims(x_img, axis=0)
 
-				if backend == 'tf':
-					x_img = np.transpose(x_img, (0, 2, 3, 1))
-					y_rpn_cls_M1 = np.transpose(y_rpn_cls_M1, (0, 2, 3, 1))
-					y_rpn_regr_M1 = np.transpose(y_rpn_regr_M1, (0, 2, 3, 1))
-					y_rpn_cls_M2 = np.transpose(y_rpn_cls_M2, (0, 2, 3, 1))
-					y_rpn_regr_M2 = np.transpose(y_rpn_regr_M2, (0, 2, 3, 1))
-					y_rpn_cls_M3 = np.transpose(y_rpn_cls_M3, (0, 2, 3, 1))
-					y_rpn_regr_M3 = np.transpose(y_rpn_regr_M3, (0, 2, 3, 1))
-				
-				yield np.copy(x_img), \
-				[np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), \
-				np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \
-				np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3)], \
-				img_data_aug
+					y_rpn_regr_M1[:, y_rpn_regr_M1.shape[1]//2:, :, :] *= C.std_scaling
+					y_rpn_regr_M2[:, y_rpn_regr_M2.shape[1]//2:, :, :] *= C.std_scaling
+					y_rpn_regr_M3[:, y_rpn_regr_M3.shape[1]//2:, :, :] *= C.std_scaling
+
+					if backend == 'tf':
+						x_img = np.transpose(x_img, (0, 2, 3, 1))
+						y_rpn_cls_M1 = np.transpose(y_rpn_cls_M1, (0, 2, 3, 1))
+						y_rpn_regr_M1 = np.transpose(y_rpn_regr_M1, (0, 2, 3, 1))
+						y_rpn_cls_M2 = np.transpose(y_rpn_cls_M2, (0, 2, 3, 1))
+						y_rpn_regr_M2 = np.transpose(y_rpn_regr_M2, (0, 2, 3, 1))
+						y_rpn_cls_M3 = np.transpose(y_rpn_cls_M3, (0, 2, 3, 1))
+						y_rpn_regr_M3 = np.transpose(y_rpn_regr_M3, (0, 2, 3, 1))
+					
+					augmented_data[stride] = [np.copy(x_img), \
+											[np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), \
+											np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \
+											np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3)], \
+											img_data_aug]
+					if(anchor_count>max_count):
+						max_count = anchor_count
+						best_stride = stride
+				# yield np.copy(x_img), \
+				# [np.copy(y_rpn_cls_M1), np.copy(y_rpn_regr_M1), \
+				# np.copy(y_rpn_cls_M2), np.copy(y_rpn_regr_M2), \
+				# np.copy(y_rpn_cls_M3), np.copy(y_rpn_regr_M3)], \
+				# img_data_aug
+				yield augmented_data[best_stride]
 			except Exception as e:
 				print(e)
+				print(traceback.format_exc())
 				continue

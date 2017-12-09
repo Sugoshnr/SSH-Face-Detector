@@ -24,7 +24,7 @@ class Config:
 
 		# size to resize the smallest side of the image
 		# self.im_size = 224
-		self.im_size = 1344
+		self.im_size = 1024
 
 		# image channel-wise mean to subtract
 		self.img_channel_mean = [103.939, 116.779, 123.68]
@@ -63,3 +63,11 @@ class Config:
 
 		self.representation = {}
 		self.eval = {}
+
+		self.left_horizontal_stride = -11
+		self.right_horizontal_stride = 11
+		self.top_vertical_stride = 11
+		self.bottom_vertical_stride = -11
+
+		self.representation = {}
+		

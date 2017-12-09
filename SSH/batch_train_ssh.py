@@ -16,7 +16,7 @@ import traceback
 from keras import backend as K
 import config
 from simple_parser import get_data
-import data_generators
+# import data_generators
 import ssh_model as model
 import losses as losses
 import roi_helpers as roi_helpers
@@ -48,7 +48,7 @@ def LoadWeights(model):
 			w, b = weights[layer.name]
 			#print w.shape, b.shape, len(layer.name)-5
 		#if layer.name[len(layer.name)-5:] == 'score':
-	## TODO: Check transpose axes orderings, specifically 3,2,1,0
+			## TODO: Check transpose axes orderings, specifically 3,2,1,0
 			w1 = np.transpose(w, (2,3,1,0))
 			if '_score' in layer.name:
 				# w1 = w1[:,:,:,0:4:2]
@@ -131,11 +131,11 @@ num_anchors = len(C.anchor_box_scales['M1']) * len(C.anchor_box_ratios)
 data_gen_train = data_generators.get_anchor_gt(train_imgs, classes_count, C, K.image_dim_ordering(), mode='train')
 data_gen_val = data_generators.get_anchor_gt(val_imgs, classes_count, C, K.image_dim_ordering(), mode='val')
 
-num_epochs = int(21000)
+num_epochs = 21000
 
 print('Starting training')
 
-patience = 20
+patience = 60
 batchSize = 4
 
 vis = True
@@ -146,7 +146,7 @@ def step_decay(epoch):
 
     initial_lrate = 0.00005
     drop = 0.1
-    epochs_drop = 6
+    epochs_drop = 30
     lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
     # lrate = initial_lrate * drop
     return lrate
@@ -168,13 +168,7 @@ SSH.compile(optimizer=optimizer, loss=[losses.rpn_loss_cls(num_anchors), losses.
 
 checkpoint = ModelCheckpoint('imagenet_pretrained_'+C.model_path, monitor = 'val_loss', save_best_only = True, verbose = 1)
 earlystop = EarlyStopping(monitor = 'val_loss', patience = patience, verbose = 1)
-
-def LogView(batch, logs = {}):
-	print (logs.keys())
-
-LogViewCallback = LambdaCallback(
-    on_batch_end=LogView
-    )
+csv_logger = CSVLogger('training.log', append=True)
 
 SSH.fit_generator(generator = data_gen_train,
 				steps_per_epoch = len(train_imgs)//batchSize,
@@ -182,5 +176,5 @@ SSH.fit_generator(generator = data_gen_train,
 				validation_steps = len(val_imgs)//batchSize,
 				epochs = num_epochs,
 				max_queue_size = 20,
-				callbacks = [checkpoint, earlystop, lr_scheduler])
+				callbacks = [checkpoint, earlystop, lr_scheduler, csv_logger])
 
